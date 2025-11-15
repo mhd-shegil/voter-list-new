@@ -1,5 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { Download, Users, CheckCircle2, FileSpreadsheet, LogOut, Filter } from "lucide-react";
+import {
+  Download,
+  Users,
+  CheckCircle2,
+  FileSpreadsheet,
+  LogOut,
+  Filter,
+} from "lucide-react";
+
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -12,14 +20,20 @@ import { saveToStorage, loadFromStorage, clearStorage } from "@/utils/storage";
 import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
+  const BACKEND_URL = "https://voter-list-backend.onrender.com";
+
   const [residents, setResidents] = useState<Resident[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showVisitedOnly, setShowVisitedOnly] = useState(false);
+
   const { toast } = useToast();
   const { logout } = useAuth();
   const navigate = useNavigate();
 
+  // -----------------------------------------------------
+  // LOGOUT
+  // -----------------------------------------------------
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -29,39 +43,100 @@ const Index = () => {
     });
   };
 
-  // Load data from storage on mount
+  // -----------------------------------------------------
+  // AUTO SYNC SINGLE RESIDENT TO BACKEND
+  // -----------------------------------------------------
+  const syncResidentToBackend = async (resident: Resident) => {
+    try {
+      await fetch(`${BACKEND_URL}/update-resident`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resident),
+      });
+      console.log("✔ Synced:", resident.name);
+    } catch (err) {
+      console.error("❌ Sync failed:", err);
+    }
+  };
+
+  // -----------------------------------------------------
+  // LOAD DATA FROM STORAGE
+  // -----------------------------------------------------
   useEffect(() => {
-    const savedData = loadFromStorage();
-    if (savedData.length > 0) {
-      setResidents(savedData);
+    const saved = loadFromStorage();
+    if (saved.length > 0) {
+      setResidents(saved);
       toast({
         title: "Data Loaded",
-        description: `${savedData.length} residents loaded from storage.`,
+        description: `${saved.length} residents loaded from storage.`,
       });
     }
   }, []);
+  // ============================
+// 🚀 FETCH DATA FROM BACKEND ON STARTUP
+// ============================
+useEffect(() => {
+  const fetchFromBackend = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/fetch-residents`);
+      const data = await res.json();
 
-  // Save to storage whenever residents change
+      if (data.success) {
+        setResidents((prev) => {
+          // Merge backend + local storage
+          return data.residents.map((sheetRow) => {
+            const existing = prev.find((r) => r.serialNo === sheetRow.serialNo);
+
+            return {
+              ...sheetRow,
+              category: existing?.category || sheetRow.category || "",
+              remark: existing?.remark || sheetRow.remark || "",
+              phoneNumber: existing?.phoneNumber || sheetRow.phoneNumber || "",
+              visitCount: existing?.visitCount || sheetRow.visitCount || 0,
+            };
+          });
+        });
+
+        toast({
+          title: "☁️ Synced from Cloud",
+          description: `Loaded ${data.residents.length} rows from Google Sheets`,
+        });
+      }
+    } catch (err) {
+      console.error("Fetch failed:", err);
+    }
+  };
+
+  fetchFromBackend();
+}, []);
+
+
+  // -----------------------------------------------------
+  // AUTO SAVE TO STORAGE
+  // -----------------------------------------------------
   useEffect(() => {
     if (residents.length > 0) {
       saveToStorage(residents);
     }
   }, [residents]);
 
+  // -----------------------------------------------------
+  // UPLOAD EXCEL FILE
+  // -----------------------------------------------------
   const handleFileUpload = async (file: File) => {
     setIsProcessing(true);
     try {
-      const parsedResidents = await parseExcelFile(file);
-      setResidents(parsedResidents);
+      const parsed = await parseExcelFile(file);
+      setResidents(parsed);
+
       toast({
-        title: "Success!",
-        description: `${parsedResidents.length} residents imported successfully.`,
-        variant: "default",
+        title: "Imported!",
+        description: `${parsed.length} residents loaded.`,
       });
-    } catch (error) {
+    } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to parse file. Please check the format.",
+        description: "Failed to read file.",
         variant: "destructive",
       });
     } finally {
@@ -69,104 +144,135 @@ const Index = () => {
     }
   };
 
+  // -----------------------------------------------------
+  // UPDATE PHONE + SYNC
+  // -----------------------------------------------------
   const handleUpdatePhone = (id: string, phone: string) => {
-    setResidents((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, phoneNumber: phone } : r))
-    );
-    toast({
-      title: "Phone Updated",
-      description: "Phone number saved successfully.",
+    setResidents((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, phoneNumber: phone } : r
+      );
+
+      const updatedResident = updated.find((r) => r.id === id);
+      if (updatedResident) syncResidentToBackend(updatedResident);
+
+      return updated;
     });
   };
 
+  // -----------------------------------------------------
+  // VISIT + SYNC
+  // -----------------------------------------------------
   const handleVisit = (id: string) => {
-    setResidents((prev) =>
-      prev.map((r) =>
+    setResidents((prev) => {
+      const updated = prev.map((r) =>
         r.id === id ? { ...r, visitCount: r.visitCount + 1 } : r
-      )
-    );
-    toast({
-      title: "Visit Recorded",
-      description: "Visit count updated successfully.",
-      variant: "default",
+      );
+
+      const updatedResident = updated.find((r) => r.id === id);
+      if (updatedResident) syncResidentToBackend(updatedResident);
+
+      return updated;
     });
   };
 
+  // -----------------------------------------------------
+  // DECREMENT VISIT + SYNC
+  // -----------------------------------------------------
   const handleDecrementVisit = (id: string) => {
-    setResidents((prev) =>
-      prev.map((r) =>
-        r.id === id && r.visitCount > 0 ? { ...r, visitCount: r.visitCount - 1 } : r
-      )
-    );
-    toast({
-      title: "Visit Decremented",
-      description: "Visit count decreased successfully.",
+    setResidents((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id && r.visitCount > 0
+          ? { ...r, visitCount: r.visitCount - 1 }
+          : r
+      );
+
+      const updatedResident = updated.find((r) => r.id === id);
+      if (updatedResident) syncResidentToBackend(updatedResident);
+
+      return updated;
     });
   };
 
+  // -----------------------------------------------------
+  // UPDATE CATEGORY + SYNC
+  // -----------------------------------------------------
   const handleUpdateCategory = (id: string, category: string) => {
-    setResidents((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, category } : r))
-    );
-    toast({
-      title: "Category Updated",
-      description: "Category saved successfully.",
+    setResidents((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, category } : r
+      );
+
+      const updatedResident = updated.find((r) => r.id === id);
+      if (updatedResident) syncResidentToBackend(updatedResident);
+
+      return updated;
     });
   };
 
+  // -----------------------------------------------------
+  // UPDATE REMARK + SYNC
+  // -----------------------------------------------------
   const handleUpdateRemark = (id: string, remark: string) => {
-    setResidents((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, remark } : r))
-    );
-    toast({
-      title: "Remark Saved",
-      description: "Remark updated successfully.",
+    setResidents((prev) => {
+      const updated = prev.map((r) =>
+        r.id === id ? { ...r, remark } : r
+      );
+
+      const updatedResident = updated.find((r) => r.id === id);
+      if (updatedResident) syncResidentToBackend(updatedResident);
+
+      return updated;
     });
   };
 
+  // -----------------------------------------------------
+  // EXPORT EXCEL
+  // -----------------------------------------------------
   const handleExport = () => {
-    exportToExcel(filteredResidents, 'field_residents');
-    toast({
-      title: "Export Complete",
-      description: "Data exported to Excel successfully.",
-    });
+    exportToExcel(residents, "field_residents");
+    toast({ title: "Exported!", description: "Excel file downloaded." });
   };
 
+  // -----------------------------------------------------
+  // CLEAR ALL DATA
+  // -----------------------------------------------------
   const handleClearData = () => {
-    if (confirm("Are you sure you want to clear all data? This cannot be undone.")) {
+    if (confirm("Are you sure? This cannot be undone.")) {
       clearStorage();
       setResidents([]);
       setSearchQuery("");
-      toast({
-        title: "Data Cleared",
-        description: "All data has been removed.",
-      });
+      toast({ title: "Cleared", description: "All local data removed." });
     }
   };
 
+  // -----------------------------------------------------
+  // FILTER LOGIC
+  // -----------------------------------------------------
   const filteredResidents = useMemo(() => {
-    let filtered = residents;
+    let list = residents;
 
-    // Apply visited filter
     if (showVisitedOnly) {
-      filtered = filtered.filter((r) => r.visitCount > 0);
+      list = list.filter((r) => r.visitCount > 0);
     }
 
-    // Apply search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
         (r) =>
-          r.name.toLowerCase().includes(query) ||
-          r.guardianName.toLowerCase().includes(query) ||
-          r.wardHouseNo.toLowerCase().includes(query) ||
-          r.houseName.toLowerCase().includes(query)
+          r.name.toLowerCase().includes(q) ||
+          r.guardianName.toLowerCase().includes(q) ||
+          r.wardHouseNo.toLowerCase().includes(q) ||
+          r.houseName.toLowerCase().includes(q)
       );
     }
 
-    return filtered;
+    return list;
   }, [residents, searchQuery, showVisitedOnly]);
 
+  // -----------------------------------------------------
+  // STATS
+  // -----------------------------------------------------
   const stats = useMemo(() => {
     const total = residents.length;
     const visited = residents.filter((r) => r.visitCount > 0).length;
@@ -178,45 +284,42 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-primary/10 p-2">
-                <FileSpreadsheet className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  Election Field Manager
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Track voter visits and contact information
-                </p>
-              </div>
+      {/* HEADER */}
+      <header className="border-b bg-card border-border">
+        <div className="container mx-auto px-4 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-primary/10 p-2">
+              <FileSpreadsheet className="h-6 w-6 text-primary" />
             </div>
-            <div className="flex gap-2">
-              {residents.length > 0 && (
-                <>
-                  <Button variant="outline" size="sm" onClick={handleClearData}>
-                    Clear Data
-                  </Button>
-                  <Button variant="default" size="sm" onClick={handleExport}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Export
-                  </Button>
-                </>
-              )}
-              <Button variant="destructive" size="sm" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Election Field Manager</h1>
+              <p className="text-sm text-muted-foreground">
+                Track voter visits & information
+              </p>
             </div>
+          </div>
+
+          <div className="flex gap-2">
+            {residents.length > 0 && (
+              <>
+                <Button variant="outline" size="sm" onClick={handleClearData}>
+                  Clear Data
+                </Button>
+                <Button variant="default" size="sm" onClick={handleExport}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              </>
+            )}
+            <Button variant="destructive" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* MAIN SECTION */}
       <main className="container mx-auto px-4 py-8">
         {residents.length === 0 ? (
           <FileUpload
@@ -225,70 +328,23 @@ const Index = () => {
           />
         ) : (
           <div className="space-y-6">
-            {/* Stats */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-primary/10 p-2">
-                    <Users className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Residents</p>
-                    <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-success/10 p-2">
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Visited</p>
-                    <p className="text-2xl font-bold text-foreground">{stats.visited}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-warning/10 p-2">
-                    <Users className="h-5 w-5 text-warning" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Unvisited</p>
-                    <p className="text-2xl font-bold text-foreground">{stats.unvisited}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-accent/10 p-2">
-                    <CheckCircle2 className="h-5 w-5 text-accent" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Visits</p>
-                    <p className="text-2xl font-bold text-foreground">{stats.totalVisits}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* STATS */}
+            <StatsBlock stats={stats} />
 
-            {/* Search and Filter */}
+            {/* SEARCH + FILTER */}
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <SearchBar value={searchQuery} onChange={setSearchQuery} />
-              </div>
+              <SearchBar value={searchQuery} onChange={setSearchQuery} />
+
               <Button
                 variant={showVisitedOnly ? "default" : "outline"}
                 onClick={() => setShowVisitedOnly(!showVisitedOnly)}
-                className="whitespace-nowrap"
               >
                 <Filter className="mr-2 h-4 w-4" />
                 {showVisitedOnly ? "Show All" : "Show Visited Only"}
               </Button>
             </div>
 
-            {/* Table */}
+            {/* TABLE */}
             <ResidentTable
               residents={filteredResidents}
               onUpdatePhone={handleUpdatePhone}
@@ -297,18 +353,35 @@ const Index = () => {
               onUpdateCategory={handleUpdateCategory}
               onUpdateRemark={handleUpdateRemark}
             />
-
-            {/* Results Info */}
-            {searchQuery && (
-              <p className="text-center text-sm text-muted-foreground">
-                Showing {filteredResidents.length} of {residents.length} residents
-              </p>
-            )}
           </div>
         )}
       </main>
     </div>
   );
 };
+
+// -----------------------------------------------------
+// STATS BLOCK
+// -----------------------------------------------------
+const StatsBlock = ({ stats }: any) => (
+  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <StatCard title="Total Residents" value={stats.total} icon={<Users className="h-5 w-5 text-primary" />} />
+    <StatCard title="Visited" value={stats.visited} icon={<CheckCircle2 className="h-5 w-5 text-success" />} />
+    <StatCard title="Unvisited" value={stats.unvisited} icon={<Users className="h-5 w-5 text-warning" />} />
+    <StatCard title="Total Visits" value={stats.totalVisits} icon={<CheckCircle2 className="h-5 w-5 text-accent" />} />
+  </div>
+);
+
+const StatCard = ({ icon, title, value }: any) => (
+  <div className="rounded-lg border bg-card p-4">
+    <div className="flex items-center gap-3">
+      <div className="rounded-full bg-primary/10 p-2">{icon}</div>
+      <div>
+        <p className="text-sm text-muted-foreground">{title}</p>
+        <p className="text-2xl font-bold">{value}</p>
+      </div>
+    </div>
+  </div>
+);
 
 export default Index;
