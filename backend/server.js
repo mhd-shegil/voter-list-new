@@ -20,7 +20,6 @@ const auth = new google.auth.JWT(
 
 const sheets = google.sheets({ version: "v4", auth });
 
-// Your Sheet ID from Render env
 const SPREADSHEET_ID = process.env.SHEET_ID;
 
 if (!SPREADSHEET_ID) {
@@ -29,7 +28,7 @@ if (!SPREADSHEET_ID) {
   console.log("✅ Using Sheet ID:", SPREADSHEET_ID);
 }
 
-// Helper: map a Resident object → sheet row (A–K)
+// Helper: map Resident object → row array
 const residentToRow = (r) => [
   r.serialNo || "",
   r.name || "",
@@ -37,7 +36,7 @@ const residentToRow = (r) => [
   r.wardHouseNo || "",
   r.houseName || "",
   r.genderAge || "",
-  r.mobileNumber || "",   // Original Mobile
+  r.mobileNumber || "",
   r.phoneNumber || "",
   r.category || "",
   r.remark || "",
@@ -45,40 +44,55 @@ const residentToRow = (r) => [
 ];
 
 // =====================================================
-// 1️⃣ ADD RESIDENT (append at bottom) — optional
+// 1️⃣ ADD RESIDENT (append at bottom)
 // =====================================================
 app.post("/add-resident", async (req, res) => {
   try {
     const r = req.body;
-
     const row = residentToRow(r);
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Sheet1!A:K", // 11 columns
+      range: "Sheet1!A:K",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [row] },
     });
 
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ Add failed:", err);
+    console.error("❌ Add failed:", err.message);
     res.status(500).json({ error: "Failed to add resident" });
   }
 });
 
 // =====================================================
-// 2️⃣ UPDATE SINGLE RESIDENT (used by auto-sync)
+// 2️⃣ UPDATE SINGLE RESIDENT (auto–safe)
 // =====================================================
 app.post("/update-resident", async (req, res) => {
   try {
     const r = req.body;
-
     const row = residentToRow(r);
 
-    // Serial No. corresponds to row number (header is row 1)
-    const rowNumber = Number(r.serialNo) + 1; // +1 because headers in row 1
+    // --------------------------------------------
+    // 🔥 SAFETY FIX: If serialNo is missing or invalid → append
+    // --------------------------------------------
+    if (!r.serialNo || isNaN(Number(r.serialNo))) {
+      console.log("⚠ No serialNo → Appending row instead of updating");
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "Sheet1!A:K",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [row] },
+      });
 
+      return res.json({ success: true, mode: "append" });
+    }
+
+    // --------------------------------------------
+    // Normal update using serialNo
+    // --------------------------------------------
+    const rowNumber = Number(r.serialNo) + 1;
     const range = `Sheet1!A${rowNumber}:K${rowNumber}`;
 
     await sheets.spreadsheets.values.update({
@@ -88,20 +102,19 @@ app.post("/update-resident", async (req, res) => {
       requestBody: { values: [row] },
     });
 
-    res.json({ success: true });
+    res.json({ success: true, mode: "update" });
   } catch (err) {
-    console.error("❌ Update failed:", err);
+    console.error("❌ Update failed:", err.message);
     res.status(500).json({ error: "Update failed" });
   }
 });
 
 // =====================================================
-// 3️⃣ SYNC ALL RESIDENTS (overwrite full sheet)
+// 3️⃣ SYNC ENTIRE RESIDENT LIST
 // =====================================================
 app.post("/sync-residents", async (req, res) => {
   try {
     const rows = req.body;
-
     const values = rows.map(residentToRow);
 
     await sheets.spreadsheets.values.update({
@@ -113,13 +126,13 @@ app.post("/sync-residents", async (req, res) => {
 
     res.json({ success: true, count: rows.length });
   } catch (err) {
-    console.error("❌ Sync failed:", err);
+    console.error("❌ Sync failed:", err.message);
     res.status(500).json({ error: "Sync failed" });
   }
 });
 
 // =====================================================
-// 4️⃣ FETCH ALL RESIDENTS (for new devices)
+// 4️⃣ FETCH ALL RESIDENTS
 // =====================================================
 app.get("/fetch-residents", async (req, res) => {
   try {
@@ -130,13 +143,12 @@ app.get("/fetch-residents", async (req, res) => {
 
     const rows = result.data.values || [];
 
-    if (rows.length === 0) {
+    if (rows.length <= 1) {
       return res.json({ success: true, residents: [] });
     }
 
-    // rows[0] is header row (Serial No., Name, ...)
     const residents = rows.slice(1).map((r, index) => ({
-      serialNo: r[0] || index + 1,
+      serialNo: Number(r[0]) || index + 1,
       name: r[1] || "",
       guardianName: r[2] || "",
       wardHouseNo: r[3] || "",
@@ -147,13 +159,13 @@ app.get("/fetch-residents", async (req, res) => {
       category: r[8] || "",
       remark: r[9] || "",
       visitCount: Number(r[10]) || 0,
-      id: `res-${index + 1}`,
+      id: `res-${index + 1}`, // Unique ID for frontend
     }));
 
-    console.log(`✅ Loaded ${residents.length} rows from Google Sheet`);
+    console.log(`✅ Loaded ${residents.length} rows from Google Sheets`);
     res.json({ success: true, residents });
   } catch (err) {
-    console.error("❌ Fetch failed:", err);
+    console.error("❌ Fetch failed:", err.message);
     res.status(500).json({ error: "Fetch failed" });
   }
 });
