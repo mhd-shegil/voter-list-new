@@ -120,14 +120,14 @@ const Index = () => {
   }, [residents]);
 
   // -----------------------------------------------------
-  // UPLOAD EXCEL FILE  **🔥 FIXED HERE**
+  // UPLOAD EXCEL FILE  **🔥 FULLY FIXED VERSION**
   // -----------------------------------------------------
   const handleFileUpload = async (file: File) => {
     setIsProcessing(true);
     try {
       let parsed = await parseExcelFile(file);
 
-      // 🔥 FIX: Add serialNo if missing (required for backend update)
+      // Add serial numbers
       parsed = parsed.map((r, index) => ({
         ...r,
         serialNo: index + 1,
@@ -135,14 +135,21 @@ const Index = () => {
 
       setResidents(parsed);
 
+      // 🔥 NEW: Sync ALL Excel rows to Google Sheet
+      await fetch(`${BACKEND_URL}/sync-residents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+
       toast({
-        title: "Imported!",
-        description: `${parsed.length} residents loaded.`,
+        title: "Synced to Google Sheet!",
+        description: `${parsed.length} rows uploaded.`,
       });
     } catch (err) {
       toast({
         title: "Error",
-        description: "Failed to read file.",
+        description: "Failed to read file or sync.",
         variant: "destructive",
       });
     } finally {
