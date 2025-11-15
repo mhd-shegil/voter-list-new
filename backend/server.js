@@ -9,7 +9,15 @@ app.use(express.json());
 // ------------------------------
 // Google Auth
 // ------------------------------
-const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+console.log("🔐 Initializing Google Auth…");
+
+let credentials = {};
+try {
+  credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+  console.log("✅ GOOGLE_CREDENTIALS loaded");
+} catch (e) {
+  console.error("❌ ERROR: GOOGLE_CREDENTIALS is invalid JSON");
+}
 
 const auth = new google.auth.JWT(
   credentials.client_email,
@@ -44,9 +52,33 @@ const residentToRow = (r) => [
 ];
 
 // =====================================================
-// 1️⃣ ADD RESIDENT (append at bottom)
+// TEST WRITE ROUTE (VERY IMPORTANT)
+// =====================================================
+app.get("/test-write", async (req, res) => {
+  console.log("✍️ TEST WRITE called...");
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "Sheet1!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [["TEST WRITE OK", new Date().toISOString()]],
+      },
+    });
+
+    console.log("✔ TEST WRITE SUCCESS");
+    res.json({ success: true, message: "Test write successful" });
+  } catch (err) {
+    console.error("❌ TEST WRITE FAILED:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =====================================================
+// 1️⃣ ADD RESIDENT
 // =====================================================
 app.post("/add-resident", async (req, res) => {
+  console.log("📥 /add-resident HIT:", req.body);
   try {
     const r = req.body;
     const row = residentToRow(r);
@@ -58,27 +90,28 @@ app.post("/add-resident", async (req, res) => {
       requestBody: { values: [row] },
     });
 
+    console.log("✔ Row added");
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ Add failed:", err.message);
+    console.error("❌ Add failed:", err);
     res.status(500).json({ error: "Failed to add resident" });
   }
 });
 
 // =====================================================
-// 2️⃣ UPDATE SINGLE RESIDENT (auto–safe)
+// 2️⃣ UPDATE SINGLE RESIDENT
 // =====================================================
 app.post("/update-resident", async (req, res) => {
+  console.log("📥 /update-resident HIT");
+  console.log("Incoming data:", req.body);
+
   try {
     const r = req.body;
     const row = residentToRow(r);
 
-    // --------------------------------------------
-    // 🔥 SAFETY FIX: If serialNo is missing or invalid → append
-    // --------------------------------------------
     if (!r.serialNo || isNaN(Number(r.serialNo))) {
-      console.log("⚠ No serialNo → Appending row instead of updating");
-      
+      console.log("⚠ serialNo missing → APPEND INSTEAD OF UPDATE");
+
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: "Sheet1!A:K",
@@ -86,14 +119,14 @@ app.post("/update-resident", async (req, res) => {
         requestBody: { values: [row] },
       });
 
+      console.log("✔ Row appended instead of update");
       return res.json({ success: true, mode: "append" });
     }
 
-    // --------------------------------------------
-    // Normal update using serialNo
-    // --------------------------------------------
     const rowNumber = Number(r.serialNo) + 1;
     const range = `Sheet1!A${rowNumber}:K${rowNumber}`;
+
+    console.log("📌 Updating range:", range);
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -102,17 +135,21 @@ app.post("/update-resident", async (req, res) => {
       requestBody: { values: [row] },
     });
 
+    console.log("✔ Row updated successfully");
     res.json({ success: true, mode: "update" });
   } catch (err) {
-    console.error("❌ Update failed:", err.message);
+    console.error("❌ Update failed:", err);
     res.status(500).json({ error: "Update failed" });
   }
 });
 
 // =====================================================
-// 3️⃣ SYNC ENTIRE RESIDENT LIST
+// 3️⃣ SYNC ALL RESIDENTS
 // =====================================================
 app.post("/sync-residents", async (req, res) => {
+  console.log("📥 /sync-residents HIT");
+  console.log("Rows received:", req.body.length);
+
   try {
     const rows = req.body;
     const values = rows.map(residentToRow);
@@ -124,9 +161,10 @@ app.post("/sync-residents", async (req, res) => {
       requestBody: { values },
     });
 
+    console.log("✔ Full sync completed");
     res.json({ success: true, count: rows.length });
   } catch (err) {
-    console.error("❌ Sync failed:", err.message);
+    console.error("❌ Sync failed:", err);
     res.status(500).json({ error: "Sync failed" });
   }
 });
@@ -135,6 +173,8 @@ app.post("/sync-residents", async (req, res) => {
 // 4️⃣ FETCH ALL RESIDENTS
 // =====================================================
 app.get("/fetch-residents", async (req, res) => {
+  console.log("📥 /fetch-residents HIT");
+
   try {
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -143,7 +183,10 @@ app.get("/fetch-residents", async (req, res) => {
 
     const rows = result.data.values || [];
 
+    console.log("📄 Raw sheet rows:", rows.length);
+
     if (rows.length <= 1) {
+      console.log("⚠ Sheet empty");
       return res.json({ success: true, residents: [] });
     }
 
@@ -159,13 +202,13 @@ app.get("/fetch-residents", async (req, res) => {
       category: r[8] || "",
       remark: r[9] || "",
       visitCount: Number(r[10]) || 0,
-      id: `res-${index + 1}`, // Unique ID for frontend
+      id: `res-${index + 1}`,
     }));
 
-    console.log(`✅ Loaded ${residents.length} rows from Google Sheets`);
+    console.log("✔ Residents loaded:", residents.length);
     res.json({ success: true, residents });
   } catch (err) {
-    console.error("❌ Fetch failed:", err.message);
+    console.error("❌ Fetch failed:", err);
     res.status(500).json({ error: "Fetch failed" });
   }
 });
