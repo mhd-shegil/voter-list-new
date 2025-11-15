@@ -274,7 +274,7 @@ const Index = () => {
   }, [residents, searchQuery, showVisitedOnly]);
 
   // -----------------------------------------------------
-  // STATS
+  // STATS  ⭐ UPDATED WITH PERCENTAGE ⭐
   // -----------------------------------------------------
   const stats = useMemo(() => {
     const total = residents.length;
@@ -282,7 +282,10 @@ const Index = () => {
     const unvisited = total - visited;
     const totalVisits = residents.reduce((sum, r) => sum + r.visitCount, 0);
 
-    return { total, visited, unvisited, totalVisits };
+    const visitedPercentage =
+      total > 0 ? ((visited / total) * 100).toFixed(1) : 0;
+
+    return { total, visited, unvisited, totalVisits, visitedPercentage };
   }, [residents]);
 
   return (
@@ -361,14 +364,40 @@ const Index = () => {
 };
 
 // -----------------------------------------------------
-// STATS BLOCK
+// STATS BLOCK  ⭐ UPDATED ⭐
 // -----------------------------------------------------
 const StatsBlock = ({ stats }: any) => (
-  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-    <StatCard title="Total Residents" value={stats.total} icon={<Users className="h-5 w-5 text-primary" />} />
-    <StatCard title="Visited" value={stats.visited} icon={<CheckCircle2 className="h-5 w-5 text-success" />} />
-    <StatCard title="Unvisited" value={stats.unvisited} icon={<Users className="h-5 w-5 text-warning" />} />
-    <StatCard title="Total Visits" value={stats.totalVisits} icon={<CheckCircle2 className="h-5 w-5 text-accent" />} />
+  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <StatCard
+      title="Total Residents"
+      value={stats.total}
+      icon={<Users className="h-5 w-5 text-primary" />}
+    />
+
+    <StatCard
+      title="Visited"
+      value={stats.visited}
+      icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+    />
+
+    <StatCard
+      title="Unvisited"
+      value={stats.unvisited}
+      icon={<Users className="h-5 w-5 text-warning" />}
+    />
+
+    {/* ⭐ NEW PERCENTAGE CARD */}
+    <StatCard
+      title="Visited %"
+      value={`${stats.visitedPercentage}%`}
+      icon={<CheckCircle2 className="h-5 w-5 text-blue-500" />}
+    />
+
+    <StatCard
+      title="Total Visits"
+      value={stats.totalVisits}
+      icon={<CheckCircle2 className="h-5 w-5 text-accent" />}
+    />
   </div>
 );
 
