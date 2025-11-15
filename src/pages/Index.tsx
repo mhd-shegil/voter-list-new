@@ -72,44 +72,43 @@ const Index = () => {
       });
     }
   }, []);
+
   // ============================
-// 🚀 FETCH DATA FROM BACKEND ON STARTUP
-// ============================
-useEffect(() => {
-  const fetchFromBackend = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/fetch-residents`);
-      const data = await res.json();
+  // 🚀 FETCH DATA FROM BACKEND ON STARTUP
+  // ============================
+  useEffect(() => {
+    const fetchFromBackend = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/fetch-residents`);
+        const data = await res.json();
 
-      if (data.success) {
-        setResidents((prev) => {
-          // Merge backend + local storage
-          return data.residents.map((sheetRow) => {
-            const existing = prev.find((r) => r.serialNo === sheetRow.serialNo);
+        if (data.success) {
+          setResidents((prev) => {
+            return data.residents.map((sheetRow) => {
+              const existing = prev.find((r) => r.serialNo === sheetRow.serialNo);
 
-            return {
-              ...sheetRow,
-              category: existing?.category || sheetRow.category || "",
-              remark: existing?.remark || sheetRow.remark || "",
-              phoneNumber: existing?.phoneNumber || sheetRow.phoneNumber || "",
-              visitCount: existing?.visitCount || sheetRow.visitCount || 0,
-            };
+              return {
+                ...sheetRow,
+                category: existing?.category || sheetRow.category || "",
+                remark: existing?.remark || sheetRow.remark || "",
+                phoneNumber: existing?.phoneNumber || sheetRow.phoneNumber || "",
+                visitCount: existing?.visitCount || sheetRow.visitCount || 0,
+              };
+            });
           });
-        });
 
-        toast({
-          title: "☁️ Synced from Cloud",
-          description: `Loaded ${data.residents.length} rows from Google Sheets`,
-        });
+          toast({
+            title: "☁️ Synced from Cloud",
+            description: `Loaded ${data.residents.length} rows from Google Sheets`,
+          });
+        }
+      } catch (err) {
+        console.error("Fetch failed:", err);
       }
-    } catch (err) {
-      console.error("Fetch failed:", err);
-    }
-  };
+    };
 
-  fetchFromBackend();
-}, []);
-
+    fetchFromBackend();
+  }, []);
 
   // -----------------------------------------------------
   // AUTO SAVE TO STORAGE
@@ -121,12 +120,19 @@ useEffect(() => {
   }, [residents]);
 
   // -----------------------------------------------------
-  // UPLOAD EXCEL FILE
+  // UPLOAD EXCEL FILE  **🔥 FIXED HERE**
   // -----------------------------------------------------
   const handleFileUpload = async (file: File) => {
     setIsProcessing(true);
     try {
-      const parsed = await parseExcelFile(file);
+      let parsed = await parseExcelFile(file);
+
+      // 🔥 FIX: Add serialNo if missing (required for backend update)
+      parsed = parsed.map((r, index) => ({
+        ...r,
+        serialNo: index + 1,
+      }));
+
       setResidents(parsed);
 
       toast({
@@ -152,10 +158,8 @@ useEffect(() => {
       const updated = prev.map((r) =>
         r.id === id ? { ...r, phoneNumber: phone } : r
       );
-
       const updatedResident = updated.find((r) => r.id === id);
       if (updatedResident) syncResidentToBackend(updatedResident);
-
       return updated;
     });
   };
@@ -168,10 +172,8 @@ useEffect(() => {
       const updated = prev.map((r) =>
         r.id === id ? { ...r, visitCount: r.visitCount + 1 } : r
       );
-
       const updatedResident = updated.find((r) => r.id === id);
       if (updatedResident) syncResidentToBackend(updatedResident);
-
       return updated;
     });
   };
@@ -186,10 +188,8 @@ useEffect(() => {
           ? { ...r, visitCount: r.visitCount - 1 }
           : r
       );
-
       const updatedResident = updated.find((r) => r.id === id);
       if (updatedResident) syncResidentToBackend(updatedResident);
-
       return updated;
     });
   };
@@ -202,10 +202,8 @@ useEffect(() => {
       const updated = prev.map((r) =>
         r.id === id ? { ...r, category } : r
       );
-
       const updatedResident = updated.find((r) => r.id === id);
       if (updatedResident) syncResidentToBackend(updatedResident);
-
       return updated;
     });
   };
@@ -218,10 +216,8 @@ useEffect(() => {
       const updated = prev.map((r) =>
         r.id === id ? { ...r, remark } : r
       );
-
       const updatedResident = updated.find((r) => r.id === id);
       if (updatedResident) syncResidentToBackend(updatedResident);
-
       return updated;
     });
   };
@@ -328,10 +324,8 @@ useEffect(() => {
           />
         ) : (
           <div className="space-y-6">
-            {/* STATS */}
             <StatsBlock stats={stats} />
 
-            {/* SEARCH + FILTER */}
             <div className="flex flex-col sm:flex-row gap-4">
               <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
@@ -344,7 +338,6 @@ useEffect(() => {
               </Button>
             </div>
 
-            {/* TABLE */}
             <ResidentTable
               residents={filteredResidents}
               onUpdatePhone={handleUpdatePhone}
