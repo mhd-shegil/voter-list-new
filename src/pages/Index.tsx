@@ -233,9 +233,13 @@ const Index = () => {
   // EXPORT EXCEL
   // -----------------------------------------------------
   const handleExport = () => {
-    exportToExcel(residents, "field_residents");
-    toast({ title: "Exported!", description: "Excel file downloaded." });
-  };
+  exportToExcel(filteredResidents, "field_residents_filtered");
+  toast({ 
+    title: "Exported!", 
+    description: `Downloaded ${filteredResidents.length} filtered rows.` 
+  });
+};
+
 
   // -----------------------------------------------------
   // CLEAR ALL DATA
