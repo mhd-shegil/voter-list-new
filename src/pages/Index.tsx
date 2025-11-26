@@ -284,7 +284,7 @@ if (serialSearch.trim()) {
 
 
     return list;
-  }, [residents, searchQuery, showVisitedOnly]);
+  }, [residents, searchQuery, serialSearch, showVisitedOnly]);
 
   // -----------------------------------------------------
   // STATS  ⭐ UPDATED WITH PERCENTAGE ⭐
