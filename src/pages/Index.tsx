@@ -265,13 +265,16 @@ const Index = () => {
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.guardianName.toLowerCase().includes(q) ||
-          r.wardHouseNo.toLowerCase().includes(q) ||
-          r.houseName.toLowerCase().includes(q)
-      );
+      list = list.filter((r) => {
+        const serialStr = String(r.serialNo ?? "").toLowerCase();
+        return (
+          serialStr.includes(q) ||
+          (r.name ?? "").toLowerCase().includes(q) ||
+          (r.guardianName ?? "").toLowerCase().includes(q) ||
+          (r.wardHouseNo ?? "").toLowerCase().includes(q) ||
+          (r.houseName ?? "").toLowerCase().includes(q)
+        );
+      });
     }
 
     return list;
