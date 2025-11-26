@@ -26,6 +26,8 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showVisitedOnly, setShowVisitedOnly] = useState(false);
+  const [serialSearch, setSerialSearch] = useState("");
+
 
   const { toast } = useToast();
   const { logout } = useAuth();
@@ -265,17 +267,21 @@ const Index = () => {
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((r) => {
-        const serialStr = String(r.serialNo ?? "").toLowerCase();
-        return (
-          serialStr.includes(q) ||
-          (r.name ?? "").toLowerCase().includes(q) ||
-          (r.guardianName ?? "").toLowerCase().includes(q) ||
-          (r.wardHouseNo ?? "").toLowerCase().includes(q) ||
-          (r.houseName ?? "").toLowerCase().includes(q)
-        );
-      });
+      list = list.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          r.guardianName.toLowerCase().includes(q) ||
+          r.wardHouseNo.toLowerCase().includes(q) ||
+          r.houseName.toLowerCase().includes(q)
+      );
     }
+    // ⭐ Serial number filter
+if (serialSearch.trim()) {
+  list = list.filter((r) =>
+    String(r.serialNo).startsWith(serialSearch.trim())
+  );
+}
+
 
     return list;
   }, [residents, searchQuery, showVisitedOnly]);
@@ -344,16 +350,28 @@ const Index = () => {
             <StatsBlock stats={stats} />
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
-              <Button
-                variant={showVisitedOnly ? "default" : "outline"}
-                onClick={() => setShowVisitedOnly(!showVisitedOnly)}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                {showVisitedOnly ? "Show All" : "Show Visited Only"}
-              </Button>
-            </div>
+  {/* Existing Name/House Search */}
+  <SearchBar value={searchQuery} onChange={setSearchQuery} />
+
+  {/* NEW Serial Number Search */}
+  <input
+    type="number"
+    placeholder="Search Serial No."
+    className="border p-2 rounded-md w-full sm:w-48"
+    value={serialSearch}
+    onChange={(e) => setSerialSearch(e.target.value)}
+  />
+
+  <Button
+    variant={showVisitedOnly ? "default" : "outline"}
+    onClick={() => setShowVisitedOnly(!showVisitedOnly)}
+  >
+    <Filter className="mr-2 h-4 w-4" />
+    {showVisitedOnly ? "Show All" : "Show Visited Only"}
+  </Button>
+</div>
+
 
             <ResidentTable
               residents={filteredResidents}
