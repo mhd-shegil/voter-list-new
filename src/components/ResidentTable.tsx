@@ -110,7 +110,9 @@ export const ResidentTable = ({
                 key={resident.id}
                 className={cn(
                   "transition-colors",
-                  resident.visitCount === 0 && "bg-warning/5 hover:bg-warning/10"
+                  resident.visitCount === 0 && "bg-warning/5 hover:bg-warning/10",
+                  resident.visitCount === 1 && "bg-green-200 hover:bg-green-300",
+                  resident.visitCount >= 2 && "bg-red-200 hover:bg-red-300"
                 )}
               >
                 <TableCell className="font-medium">{resident.serialNo}</TableCell>
